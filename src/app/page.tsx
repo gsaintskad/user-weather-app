@@ -11,11 +11,36 @@ import { User, Weather, UserWithWeather } from '@/types';
 // Helper function to fetch weather via our own API
 const fetchWeatherForUser = async (user: User): Promise<UserWithWeather> => {
   const { latitude, longitude } = user.location.coordinates;
-  const weatherRes = await fetch(`/api/weather?lat=${latitude}&lon=${longitude}`);
-  if (!weatherRes.ok) return { user, weather: null };
-  const weatherData: Weather = await weatherRes.json();
-  return { user, weather: weatherData };
+  const url = `/api/weather?lat=${latitude}&lon=${longitude}`;
+
+  const attemptFetch = async () => {
+    const weatherRes = await fetch(url);
+    if (!weatherRes.ok) {
+      // If it fails, throw an error to trigger the retry
+      throw new Error(`Failed to fetch weather. Status: ${weatherRes.status}`);
+    }
+    return weatherRes.json();
+  };
+
+  try {
+    const weatherData: Weather = await attemptFetch();
+    return { user, weather: weatherData };
+  } catch (error) {
+    console.log(`First attempt to fetch weather for ${user.name.first} failed. Retrying...`);
+    // Wait for a second before retrying
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const weatherData: Weather = await attemptFetch();
+      console.log(`Successfully fetched weather for ${user.name.first} on second attempt.`);
+      return { user, weather: weatherData };
+    } catch (finalError) {
+      console.error(`Final attempt to fetch weather for ${user.name.first} failed.`, finalError);
+      return { user, weather: null }; // Return null after the final failure
+    }
+  }
 };
+
+
 
 export default function HomePage() {
   const [users, setUsers] = useState<UserWithWeather[]>([]);
@@ -28,13 +53,22 @@ export default function HomePage() {
   useEffect(() => {
     setIsMounted(true);
   }, []);
-
+  const handleUpdateWeather = async (userToUpdate: User) => {
+    const { user, weather } = await fetchWeatherForUser(userToUpdate);
+    if (weather) {
+      setUsers(currentUsers =>
+        currentUsers.map(u =>
+          u.user.id.value === user.id.value ? { ...u, weather: weather } : u
+        )
+      );
+    }
+  };
   const fetchNewUsers = useCallback(async (count: number = 5, existingUsers: UserWithWeather[] = []) => {
     setLoading(true);
     try {
       const userRes = await fetch(`/api/users?count=${count}`);
       const { results: userResults } = await userRes.json();
-      
+
       const combinedUsers = [...existingUsers, ...users];
       const newUsers = userResults.filter(
         (newUser: User) => !combinedUsers.some(existing => existing.user.id.value === newUser.id.value)
@@ -45,7 +79,7 @@ export default function HomePage() {
         setInitialLoad(false);
         return;
       }
-      
+
       const usersWithWeather = await Promise.all(newUsers.map(fetchWeatherForUser));
       setUsers((prevUsers) => [...prevUsers, ...usersWithWeather]);
 
@@ -68,10 +102,10 @@ export default function HomePage() {
 
       let localUsersWithWeather: UserWithWeather[] = [];
       const savedUsersRaw = localStorage.getItem('savedUsers');
-      
+
       if (savedUsersRaw) {
         const savedUsers: User[] = JSON.parse(savedUsersRaw);
-        
+
         if (savedUsers.length > 0) {
           localUsersWithWeather = await Promise.all(savedUsers.map(fetchWeatherForUser));
           setUsers(localUsersWithWeather);
@@ -84,7 +118,7 @@ export default function HomePage() {
           }
         }
       }
-      
+
       // This line will only be reached if localStorage has 5 or fewer users
       await fetchNewUsers(5, localUsersWithWeather);
     };
@@ -131,6 +165,7 @@ export default function HomePage() {
               weather={weather}
               onSave={handleSaveUser}
               onShowWeather={handleShowWeather}
+              onUpdateWeather={handleUpdateWeather} // Pass the new handler down
             />
           ))}
         </div>
