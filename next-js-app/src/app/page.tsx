@@ -2,11 +2,12 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import UserCard from '@/components/UserCard';
 import WeatherModal from '@/components/WeatherModal';
 import { Button } from '@/components/ui/button';
 import { User, Weather, UserWithWeather } from '@/types';
+import { toast } from 'sonner'; // Import the toast function
 
 // Helper function to fetch weather via our own API
 const fetchWeatherForUser = async (user: User): Promise<UserWithWeather> => {
@@ -16,7 +17,6 @@ const fetchWeatherForUser = async (user: User): Promise<UserWithWeather> => {
   const attemptFetch = async () => {
     const weatherRes = await fetch(url);
     if (!weatherRes.ok) {
-      // If it fails, throw an error to trigger the retry
       throw new Error(`Failed to fetch weather. Status: ${weatherRes.status}`);
     }
     return weatherRes.json();
@@ -27,7 +27,6 @@ const fetchWeatherForUser = async (user: User): Promise<UserWithWeather> => {
     return { user, weather: weatherData };
   } catch (error) {
     console.log(`First attempt to fetch weather for ${user.name.first} failed. Retrying...`);
-    // Wait for a second before retrying
     await new Promise(resolve => setTimeout(resolve, 1000));
     try {
       const weatherData: Weather = await attemptFetch();
@@ -35,12 +34,10 @@ const fetchWeatherForUser = async (user: User): Promise<UserWithWeather> => {
       return { user, weather: weatherData };
     } catch (finalError) {
       console.error(`Final attempt to fetch weather for ${user.name.first} failed.`, finalError);
-      return { user, weather: null }; // Return null after the final failure
+      return { user, weather: null };
     }
   }
 };
-
-
 
 export default function HomePage() {
   const [users, setUsers] = useState<UserWithWeather[]>([]);
@@ -53,44 +50,72 @@ export default function HomePage() {
   useEffect(() => {
     setIsMounted(true);
   }, []);
-  const handleUpdateWeather = async (userToUpdate: User) => {
+
+  // --- Optimized Handlers ---
+
+  const handleUpdateWeather = useCallback(async (userToUpdate: User) => {
     const { user, weather } = await fetchWeatherForUser(userToUpdate);
     if (weather) {
       setUsers(currentUsers =>
         currentUsers.map(u =>
-          u.user.id.value === user.id.value ? { ...u, weather: weather } : u
+          u.user.id.value === user.id.value ? { ...u, weather } : u
         )
       );
     }
-  };
-  const fetchNewUsers = useCallback(async (count: number = 5, existingUsers: UserWithWeather[] = []) => {
+  }, []);
+
+  const handleSaveUser = useCallback((userToSave: User) => {
+    const savedUsers = JSON.parse(localStorage.getItem('savedUsers') || '[]');
+    if (!savedUsers.some((u: User) => u.id.value === userToSave.id.value)) {
+      const newSavedUsers = [...savedUsers, userToSave];
+      localStorage.setItem('savedUsers', JSON.stringify(newSavedUsers));
+      // Use toast.success for a successful save
+      toast.success(`${userToSave.name.first} has been saved!`);
+    } else {
+      // Use toast.info for an informational message
+      toast.info(`${userToSave.name.first} is already saved.`);
+    }
+  }, []);
+
+  const handleShowWeather = useCallback((user: User) => {
+    setSelectedUser(user);
+    setIsModalOpen(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+    setSelectedUser(null);
+  }, []);
+  
+  const handleLoadMore = useCallback(async () => {
     setLoading(true);
     try {
-      const userRes = await fetch(`/api/users?count=${count}`);
+      const userRes = await fetch(`/api/users?count=5`);
       const { results: userResults } = await userRes.json();
+      
+      const potentialUsersWithWeather = await Promise.all(userResults.map(fetchWeatherForUser));
 
-      const combinedUsers = [...existingUsers, ...users];
-      const newUsers = userResults.filter(
-        (newUser: User) => !combinedUsers.some(existing => existing.user.id.value === newUser.id.value)
-      );
-
-      if (newUsers.length === 0) {
-        setLoading(false);
-        setInitialLoad(false);
-        return;
-      }
-
-      const usersWithWeather = await Promise.all(newUsers.map(fetchWeatherForUser));
-      setUsers((prevUsers) => [...prevUsers, ...usersWithWeather]);
+      setUsers((prevUsers) => {
+        const existingUserIds = new Set(prevUsers.map(u => u.user.id.value));
+        const newUsers = potentialUsersWithWeather.filter(
+          (newUser) => newUser.user.id.value && !existingUserIds.has(newUser.user.id.value)
+        );
+        return [...prevUsers, ...newUsers];
+      });
 
     } catch (error) {
-      console.error('Failed to fetch data:', error);
+      console.error('Failed to fetch more data:', error);
     } finally {
       setLoading(false);
-      setInitialLoad(false);
     }
-  }, [users]);
+  }, []);
 
+  const selectedUserWeather = useMemo(() => 
+    users.find(u => u.user.id.value === selectedUser?.id.value)?.weather || null,
+    [users, selectedUser]
+  );
+
+  // Effect for initial data load, now only runs once after mount.
   useEffect(() => {
     if (!isMounted) {
       return;
@@ -99,56 +124,41 @@ export default function HomePage() {
     const loadInitialData = async () => {
       setInitialLoad(true);
       setLoading(true);
+      try {
+        const savedUsersRaw = localStorage.getItem('savedUsers');
+        const savedUsers: User[] = savedUsersRaw ? JSON.parse(savedUsersRaw) : [];
 
-      let localUsersWithWeather: UserWithWeather[] = [];
-      const savedUsersRaw = localStorage.getItem('savedUsers');
+        const shouldFetchNew = savedUsers.length < 5;
+        let remoteUsers: User[] = [];
 
-      if (savedUsersRaw) {
-        const savedUsers: User[] = JSON.parse(savedUsersRaw);
-
-        if (savedUsers.length > 0) {
-          localUsersWithWeather = await Promise.all(savedUsers.map(fetchWeatherForUser));
-          setUsers(localUsersWithWeather);
-
-          // This is the new conditional logic
-          if (savedUsers.length > 5) {
-            setLoading(false);
-            setInitialLoad(false);
-            return; // Stop here and don't fetch new users
-          }
+        if (shouldFetchNew) {
+          const userRes = await fetch(`/api/users?count=5`);
+          const { results } = await userRes.json();
+          remoteUsers = results;
         }
-      }
 
-      // This line will only be reached if localStorage has 5 or fewer users
-      await fetchNewUsers(5, localUsersWithWeather);
+        const allUsers = [...savedUsers, ...remoteUsers];
+        const uniqueUserMap = new Map<string, User>();
+        allUsers.forEach(user => {
+          if (user?.id?.value) {
+            uniqueUserMap.set(user.id.value, user);
+          }
+        });
+        const uniqueUsers = Array.from(uniqueUserMap.values());
+        
+        const usersWithWeather = await Promise.all(uniqueUsers.map(fetchWeatherForUser));
+        setUsers(usersWithWeather);
+
+      } catch (error) {
+        console.error('Failed to load initial data:', error);
+      } finally {
+        setLoading(false);
+        setInitialLoad(false);
+      }
     };
 
     loadInitialData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
-
-  const handleSaveUser = (userToSave: User) => {
-    const savedUsers = JSON.parse(localStorage.getItem('savedUsers') || '[]');
-    if (!savedUsers.some((u: User) => u.id.value === userToSave.id.value)) {
-      const newSavedUsers = [...savedUsers, userToSave];
-      localStorage.setItem('savedUsers', JSON.stringify(newSavedUsers));
-      alert(`${userToSave.name.first} has been saved!`);
-    } else {
-      alert(`${userToSave.name.first} is already saved.`);
-    }
-  };
-
-  const handleShowWeather = (user: User) => {
-    setSelectedUser(user);
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedUser(null);
-  };
-
-  const selectedUserWeather = users.find(u => u.user.id.value === selectedUser?.id.value)?.weather || null;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 sm:p-8">
@@ -165,12 +175,12 @@ export default function HomePage() {
               weather={weather}
               onSave={handleSaveUser}
               onShowWeather={handleShowWeather}
-              onUpdateWeather={handleUpdateWeather} // Pass the new handler down
+              onUpdateWeather={handleUpdateWeather}
             />
           ))}
         </div>
         <div className="mt-8 text-center">
-          <Button onClick={() => fetchNewUsers(5)} disabled={loading}>
+          <Button onClick={handleLoadMore} disabled={loading}>
             {loading ? 'Loading...' : 'Load More'}
           </Button>
         </div>

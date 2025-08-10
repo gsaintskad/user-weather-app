@@ -6,7 +6,7 @@ import { User, Weather } from '@/types';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardFooter, CardTitle } from '@/components/ui/card';
-import { useEffect } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 
 interface UserCardProps {
   user: User;
@@ -26,6 +26,7 @@ const getWeatherIcon = (code: number, temp: number) => {
 };
 
 export default function UserCard({ user, weather, onSave, onShowWeather, onUpdateWeather }: UserCardProps) {
+  // This effect sets up the periodic update for weather
   useEffect(() => {
     const interval = setInterval(() => {
       console.log(`Updating weather for ${user.name.first}...`);
@@ -35,12 +36,32 @@ export default function UserCard({ user, weather, onSave, onShowWeather, onUpdat
     return () => clearInterval(interval);
   }, [user, onUpdateWeather]);
 
+  // --- Optimizations ---
+
+  // useMemo caches the result of getWeatherIcon so it's only recalculated when weather changes.
+  const weatherIcon = useMemo(() => {
+    if (!weather?.current_weather) return null;
+    return getWeatherIcon(weather.current_weather.weathercode, weather.current_weather.temperature);
+  }, [weather]);
+
+  // useCallback ensures these handler functions are not recreated on every render.
+  const handleShowWeatherClick = useCallback(() => {
+    onShowWeather(user);
+  }, [onShowWeather, user]);
+
+  const handleSaveClick = useCallback(() => {
+    onSave(user);
+  }, [onSave, user]);
+
+
   return (
     <Card className="transition-shadow duration-300 hover:shadow-lg">
       <CardHeader>
-        {/* --- New CSS Grid Layout --- */}
-        <div className="grid grid-cols-2 items-center gap-x-4">
-          {/* Row 1, Column 1: Avatar */}
+        {/* --- Responsive Layout --- */}
+        {/* Default: grid for mobile. md:flex for medium screens and up */}
+        <div className="grid grid-cols-2 items-start gap-x-4 md:flex md:gap-4">
+          
+          {/* Item 1: Avatar */}
           <Image
             src={user.picture.large}
             alt={`${user.name.first} ${user.name.last}`}
@@ -49,12 +70,11 @@ export default function UserCard({ user, weather, onSave, onShowWeather, onUpdat
             className="rounded-full border-4 border-slate-200"
           />
 
-          {/* Row 1, Column 2: Weather Info */}
+          {/* Item 2: Weather Info (Visually last on desktop) */}
           {weather && weather.current_weather && (
-            <div className="text-right justify-self-end">
+            <div className="text-right justify-self-end md:order-3">
               <p className="text-3xl">
-                {/* The temperature is now passed to the icon function */}
-                {getWeatherIcon(weather.current_weather.weathercode, weather.current_weather.temperature)}
+                {weatherIcon}
               </p>
               <p className="text-lg font-semibold text-slate-800">
                 {weather.current_weather.temperature}°C
@@ -62,13 +82,12 @@ export default function UserCard({ user, weather, onSave, onShowWeather, onUpdat
             </div>
           )}
 
-          {/* Row 2, Spanning both columns: User Details */}
-          <div className="col-span-2 mt-4">
+          {/* Item 3: User Details (Visually second on desktop) */}
+          <div className="col-span-2 mt-4 md:order-2 md:mt-0 md:flex-1">
             <CardTitle className="text-xl">
               {user.name.first} {user.name.last}
             </CardTitle>
             <p className="text-sm capitalize text-slate-500">{user.gender}</p>
-            {/* Using break-words for better text wrapping on emails */}
             <p className="text-sm text-slate-600 break-words">{user.email}</p>
             <p className="text-sm text-slate-600">
               {user.location.city}, {user.location.country}
@@ -77,10 +96,10 @@ export default function UserCard({ user, weather, onSave, onShowWeather, onUpdat
         </div>
       </CardHeader>
       <CardFooter className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => onShowWeather(user)}>
+        <Button variant="outline" onClick={handleShowWeatherClick}>
           Weather
         </Button>
-        <Button onClick={() => onSave(user)}>Save</Button>
+        <Button onClick={handleSaveClick}>Save</Button>
       </CardFooter>
     </Card>
   );

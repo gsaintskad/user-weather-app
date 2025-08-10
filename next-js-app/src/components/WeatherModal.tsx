@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -41,8 +41,23 @@ const getWeatherIcon = (code: number, temp: number) => {
 export default function WeatherModal({ isOpen, onClose, weather, user }: WeatherModalProps) {
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleGetAdvice = async () => {
-    if (!weather || !weather.current_weather) {
+  // --- Optimizations ---
+
+  // useMemo caches the result of this check.
+  const hasCompleteWeatherData = useMemo(
+    () => weather && weather.current_weather && weather.daily,
+    [weather]
+  );
+
+  // useMemo caches the weather icon calculation.
+  const weatherIcon = useMemo(() => {
+    if (!hasCompleteWeatherData) return null;
+    return getWeatherIcon(weather!.current_weather.weathercode, weather!.current_weather.temperature);
+  }, [weather, hasCompleteWeatherData]);
+
+  // useCallback memoizes the async function for fetching advice.
+  const handleGetAdvice = useCallback(async () => {
+    if (!hasCompleteWeatherData) {
       toast.error('Cannot get advice without weather data.');
       return;
     }
@@ -55,8 +70,8 @@ export default function WeatherModal({ isOpen, onClose, weather, user }: Weather
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          temperature: weather.current_weather.temperature,
-          condition: getWeatherCondition(weather.current_weather.weathercode),
+          temperature: weather!.current_weather.temperature,
+          condition: getWeatherCondition(weather!.current_weather.weathercode),
         }),
       });
 
@@ -71,13 +86,12 @@ export default function WeatherModal({ isOpen, onClose, weather, user }: Weather
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [weather, hasCompleteWeatherData]);
+
 
   if (!isOpen || !user) {
     return null;
   }
-
-  const hasCompleteWeatherData = weather && weather.current_weather && weather.daily;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -91,19 +105,19 @@ export default function WeatherModal({ isOpen, onClose, weather, user }: Weather
         {hasCompleteWeatherData ? (
           <div className="flex flex-col items-center gap-4 py-4">
             <div className="text-6xl">
-              {getWeatherIcon(weather.current_weather.weathercode, weather.current_weather.temperature)}
+              {weatherIcon}
             </div>
             <div className="text-center">
-              <p className="text-4xl font-bold">{weather.current_weather.temperature}°C</p>
+              <p className="text-4xl font-bold">{weather!.current_weather.temperature}°C</p>
               <p className="text-lg text-gray-500">Current Temperature</p>
             </div>
             <div className="mt-4 flex w-full justify-around">
               <div className="text-center">
-                <p className="text-2xl font-semibold">{weather.daily.temperature_2m_max[0]}°C</p>
+                <p className="text-2xl font-semibold">{weather!.daily.temperature_2m_max[0]}°C</p>
                 <p className="text-sm text-gray-500">Highest</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-semibold">{weather.daily.temperature_2m_min[0]}°C</p>
+                <p className="text-2xl font-semibold">{weather!.daily.temperature_2m_min[0]}°C</p>
                 <p className="text-sm text-gray-500">Lowest</p>
               </div>
             </div>
