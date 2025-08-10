@@ -1,7 +1,6 @@
-// next.config.js
-
-/** @type {import('next').NextConfig} */
 const nextConfig = {
+  // This line is essential for a production Docker build
+  output: 'standalone',
   images: {
     remotePatterns: [
       {

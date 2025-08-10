@@ -1,0 +1,22 @@
+services:
+  # The Next.js Application Service
+  app:
+    # Build the image from the Dockerfile in the './next-js-app' directory
+    build: ./next-js-app
+    # Name the container for easy reference
+    container_name: nextjs-app
+
+  # The Nginx Reverse Proxy Service
+  nginx:
+    # Use the official lightweight Nginx image
+    image: nginx:alpine
+    container_name: nginx-proxy
+    # Map port 80 on your local machine to port 80 in the Nginx container
+    ports:
+      - "80:80"
+    # Mount our custom server config into the directory Nginx expects
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    # Ensure the 'app' service starts before the 'nginx' service
+    depends_on:
+      - app
