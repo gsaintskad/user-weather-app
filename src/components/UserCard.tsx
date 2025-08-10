@@ -1,62 +1,65 @@
 // components/UserCard.tsx
 
+'use client';
+
 import { User, Weather } from '@/types';
 import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface UserCardProps {
   user: User;
   weather: Weather | null;
+  onSave: (user: User) => void;
+  onShowWeather: (user: User) => void;
 }
 
-// A helper to get the weather icon based on the weather code from the API
 const getWeatherIcon = (code: number) => {
-  if (code === 0) return '☀️'; // Sunny
-  if (code > 0 && code < 4) return '☁️'; // Cloudy
-  if ((code > 50 && code < 66) || (code > 79 && code < 83)) return '🌧️'; // Rainy
-  return '☀️'; // Default
+  if (code === 0) return '☀️';
+  if (code > 0 && code < 4) return '☁️';
+  if ((code > 50 && code < 66) || (code > 79 && code < 83)) return '🌧️';
+  return '☀️';
 };
 
-export default function UserCard({ user, weather }: UserCardProps) {
+export default function UserCard({ user, weather, onSave, onShowWeather }: UserCardProps) {
   return (
-    <div className="rounded-lg bg-white p-6 shadow-md transition-shadow duration-300 hover:shadow-xl">
-      <div className="flex items-start gap-6">
-        <Image
-          src={user.picture.large}
-          alt={`${user.name.first} ${user.name.last}`}
-          width={96}
-          height={96}
-          className="rounded-full border-4 border-gray-200"
-        />
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-800">
-            {user.name.first} {user.name.last}
-          </h2>
-          <p className="text-md capitalize text-gray-500">{user.gender}</p>
-          <p className="text-md mt-2 text-gray-600">{user.email}</p>
-          <p className="text-md text-gray-600">
-            {user.location.city}, {user.location.country}
-          </p>
-        </div>
-        {weather && (
-          <div className="text-right">
-            <p className="text-4xl">{getWeatherIcon(weather.current_weather.weathercode)}</p>
-            <p className="text-xl font-semibold text-gray-800">
-              {weather.current_weather.temperature}°C
-            </p>
-            <p className="text-sm text-gray-500">
-              H: {weather.daily.temperature_2m_max[0]}° L: {weather.daily.temperature_2m_min[0]}°
+    <Card className="transition-shadow duration-300 hover:shadow-lg">
+      <CardHeader>
+        <div className="flex items-start gap-4">
+          <Image
+            src={user.picture.large}
+            alt={`${user.name.first} ${user.name.last}`}
+            width={80}
+            height={80}
+            className="rounded-full border-4 border-slate-200"
+          />
+          <div className="flex-1">
+            <CardTitle className="text-xl">
+              {user.name.first} {user.name.last}
+            </CardTitle>
+            <p className="text-sm capitalize text-slate-500">{user.gender}</p>
+            <p className="text-sm text-slate-600">{user.email}</p>
+            <p className="text-sm text-slate-600">
+              {user.location.city}, {user.location.country}
             </p>
           </div>
-        )}
-      </div>
-      <div className="mt-6 flex justify-end gap-4">
-        <button className="rounded-md bg-blue-500 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-600">
+          {/* This is the updated line */}
+          {weather && weather.current_weather && (
+            <div className="text-right">
+              <p className="text-3xl">{getWeatherIcon(weather.current_weather.weathercode)}</p>
+              <p className="text-lg font-semibold text-slate-800">
+                {weather.current_weather.temperature}°C
+              </p>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardFooter className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => onShowWeather(user)}>
           Weather
-        </button>
-        <button className="rounded-md bg-green-500 px-4 py-2 font-semibold text-white transition-colors hover:bg-green-600">
-          Save
-        </button>
-      </div>
-    </div>
+        </Button>
+        <Button onClick={() => onSave(user)}>Save</Button>
+      </CardFooter>
+    </Card>
   );
 }
