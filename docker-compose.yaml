@@ -3,15 +3,33 @@ services:
   app:
     build: ./next-js-app
     container_name: nextjs-app
-    restart: always
 
-  # New Nest.js API
+  # Nest.js API
   nest-api:
     build: ./nest-api
     container_name: nest-api
-    ports:
-      - "4000:4000" # Exposes port 4000 for direct testing
-    restart: always
+    depends_on:
+      ollama:
+        condition: service_healthy # Waits for the healthcheck to pass
+
+  # Custom Ollama LLM Service
+  ollama:
+    build: ./ollama-config
+    container_name: ollama
+    volumes:
+      - ./ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Nginx Reverse Proxy
   nginx:
@@ -24,4 +42,3 @@ services:
     depends_on:
       - app
       - nest-api
-    restart: always

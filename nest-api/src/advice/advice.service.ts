@@ -1,30 +1,38 @@
+// nest-api/src/advice/advice.service.ts
 
 import { Injectable } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { GetAdviceDto } from './dto/get-advice.dto';
 
 @Injectable()
 export class AdviceService {
-  getClothingAdvice(weatherData: GetAdviceDto): { advice: string } {
+  // Inject the HttpService
+  constructor(private readonly httpService: HttpService) {}
+
+  async getClothingAdvice(weatherData: GetAdviceDto): Promise<{ advice: string }> {
     const { temperature, condition } = weatherData;
-    let advice = '';
 
-    if (temperature > 20) {
-      advice = "It's warm! A t-shirt and shorts would be perfect.";
-      if (condition.toLowerCase().includes('sun')) {
-        advice += ' Don\'t forget sunglasses!';
-      }
-    } else if (temperature > 10) {
-      advice = 'It\'s a bit cool. A light jacket or sweater is a good idea.';
-      if (condition.toLowerCase().includes('rain')) {
-        advice += ' And maybe bring an umbrella.';
-      }
-    } else {
-      advice = 'It\'s cold. You should wear a warm coat, a scarf, and a hat.';
-      if (temperature <= 0) {
-        advice += ' It\'s freezing, so layer up!';
-      }
+    // Create a prompt for the LLM
+    const prompt = `The weather is ${condition} with a temperature of ${temperature}°C. What should I wear for a walk? Give a short, practical suggestion.`;
+
+    try {
+      // The URL points to the Ollama container on the Docker network
+      const ollamaUrl = 'http://ollama:11434/api/generate';
+
+      const response = await firstValueFrom(
+        this.httpService.post(ollamaUrl, {
+          model: 'gemma:2b', // A good, lightweight model for your hardware
+          prompt: prompt,
+          stream: false, // We want the full response at once
+        }),
+      );
+
+      // Return the response from the LLM
+      return { advice: response.data.response };
+    } catch (error) {
+      console.error('Error contacting Ollama:', error.message);
+      return { advice: 'Sorry, I couldn\'t get any advice right now.' };
     }
-
-    return { advice };
   }
 }
