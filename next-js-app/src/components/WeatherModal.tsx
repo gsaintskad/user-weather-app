@@ -49,7 +49,7 @@ export default function WeatherModal({ isOpen, onClose, weather, user }: Weather
 
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost/advice', {
+      const response = await fetch('/advice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
